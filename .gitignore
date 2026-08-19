@@ -1,0 +1,6 @@
+﻿motilal_login.py
+angel_login.py
+__pycache__/
+*.log
+watchlist.json
+nsefo_scrips.csv
