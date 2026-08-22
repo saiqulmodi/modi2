@@ -1,0 +1,89 @@
+"""
+Angel One fallback for index spot price and option premiums, used when
+Motilal Oswal's price endpoints fail. Mirrors the pattern already used in
+MODI1's angel_data.py.
+"""
+
+import json
+import requests
+from datetime import datetime
+from angel_login import auth_token, API_KEY
+
+with open("angel_scrips.json", "r") as f:
+    angel_scrips = json.load(f)
+
+INDEX_TOKENS = {
+    "NIFTY": "26000",
+    "BANKNIFTY": "26009",
+}
+
+
+def _headers():
+    return {
+        "Authorization": f"Bearer {auth_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-UserType": "USER",
+        "X-SourceID": "WEB",
+        "X-ClientLocalIP": "1.2.3.4",
+        "X-ClientPublicIP": "1.2.3.4",
+        "X-MACAddress": "00:00:00:00:00:00",
+        "X-PrivateKey": API_KEY,
+    }
+
+
+def _get_ltp_by_token(token, exchange):
+    url = "https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getLtpData"
+    body = {"exchange": exchange, "tradingsymbol": "-", "symboltoken": str(token)}
+    try:
+        response = requests.post(url, json=body, headers=_headers(), timeout=10)
+        return response.json()
+    except (requests.exceptions.RequestException, ValueError):
+        return None
+
+
+def get_angel_index_ltp(symbol):
+    """symbol: 'NIFTY' or 'BANKNIFTY'. Returns the raw Angel LTP response, or None."""
+    token = INDEX_TOKENS.get(symbol)
+    if not token:
+        return None
+    return _get_ltp_by_token(token, "NSE")
+
+
+def find_angel_option_token(index_name, strike, option_type):
+    """
+    Finds the nearest-expiry OPTIDX contract token matching index_name
+    ('NIFTY'/'BANKNIFTY'), strike (plain rupee value, e.g. 22600), and
+    option_type ('CE'/'PE'). Returns None if no match found.
+    """
+    suffix = option_type.upper()
+    candidates = []
+    for entry in angel_scrips:
+        if (
+            entry.get("instrumenttype") == "OPTIDX"
+            and entry.get("name") == index_name
+            and entry.get("symbol", "").endswith(suffix)
+        ):
+            try:
+                entry_strike = float(entry["strike"]) / 100
+            except (ValueError, TypeError):
+                continue
+            if abs(entry_strike - strike) < 0.01:
+                try:
+                    expiry_date = datetime.strptime(entry["expiry"], "%d%b%Y")
+                except ValueError:
+                    continue
+                candidates.append((expiry_date, entry["token"]))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c[0])
+    return candidates[0][1]
+
+
+def get_angel_option_ltp(index_name, strike, option_type):
+    """Returns the raw Angel LTP response for the nearest-expiry matching option contract, or None."""
+    token = find_angel_option_token(index_name, strike, option_type)
+    if not token:
+        return None
+    return _get_ltp_by_token(token, "NFO")

@@ -98,7 +98,7 @@ def get_directional_signal(symbol, strike_step=None):
         if not match.empty:
             scripcode = match.iloc[0]["scripcode"]
             scripname = match.iloc[0]["scripname"]
-            entry_price = get_ltp(scripcode)
+            entry_price = get_ltp(scripcode, index_name=symbol, strike=strike, option_type=direction)
 
     stop_loss = round(entry_price * (1 - STOPLOSS_PCT), 2) if entry_price else None
 
