@@ -57,6 +57,17 @@ STRIKE_STEPS = {
     "BANKNIFTY": 100
 }
 
+# backtest.py showed the PE (bearish) side of this signal is worse than a
+# coin flip and gets worse with longer holds (down to 32-37% win rate at a
+# 10-day horizon), while CE (bullish) has a real, modest edge (52-60% win
+# rate). So PE calls are suppressed at the alert layer until the logic is
+# reworked -- see live_alerts.py.
+
+# Stop-loss as a percentage of the option premium paid, the standard
+# practical risk control for option buyers (protects against theta decay
+# and adverse moves without needing a separate underlying-price stop).
+STOPLOSS_PCT = 0.30
+
 def get_directional_signal(symbol, strike_step=None):
     if strike_step is None:
         strike_step = STRIKE_STEPS[symbol]
@@ -79,13 +90,28 @@ def get_directional_signal(symbol, strike_step=None):
         direction = "NEUTRAL"
         strike = round(spot / strike_step) * strike_step
 
+    entry_price = None
+    scripname = None
+    if direction in ("CE", "PE"):
+        chain = get_option_chain(symbol, spot)
+        match = chain[(chain["strikeprice"] == strike) & (chain["optiontype"] == direction)]
+        if not match.empty:
+            scripcode = match.iloc[0]["scripcode"]
+            scripname = match.iloc[0]["scripname"]
+            entry_price = get_ltp(scripcode)
+
+    stop_loss = round(entry_price * (1 - STOPLOSS_PCT), 2) if entry_price else None
+
     return {
         "symbol": symbol,
         "spot": spot,
         "trend_score": trend_score,
         "note": note,
         "direction": direction,
-        "strike": strike
+        "strike": strike,
+        "scripname": scripname,
+        "entry_price": entry_price,
+        "stop_loss": stop_loss
     }
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import pytz
 
 from option_signal import get_directional_signal
 from send_telegram import send_telegram_message
+from intraday_confirm import get_intraday_confirmation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,13 +32,35 @@ def is_market_open():
 def check_and_alert():
     for symbol in ["NIFTY", "BANKNIFTY"]:
         result = get_directional_signal(symbol)
-        if result["direction"] in ("CE", "PE"):
+
+        if result["direction"] == "PE":
+            # Suppressed: backtest.py showed PE calls are worse than a coin
+            # flip (32-37% win rate at 10-day horizon) and get worse the
+            # longer they're held, so they're not alerted on for now.
+            logging.info(f"{symbol}: PE signal suppressed (unreliable per backtest), no alert sent")
+            continue
+
+        if result["direction"] == "CE":
+            intraday = get_intraday_confirmation(symbol)
+            if intraday is None:
+                logging.info(f"{symbol}: CE signal held back, no intraday confirmation data available")
+                continue
+            if not intraday["confirms_bullish"]:
+                logging.info(f"{symbol}: CE signal held back, intraday action doesn't confirm ({intraday})")
+                continue
+
             message = (
                 f"<b>MODI2 Signal: {symbol}</b>\n"
                 f"Spot: {result['spot']}\n"
                 f"Trend: {result['note']}\n"
+                f"Intraday: VWAP {intraday['vwap']}, ORB breakout {intraday['orb_breakout']}\n"
                 f"Direction: {result['direction']} {result['strike']}"
             )
+            if result["entry_price"] is not None:
+                message += (
+                    f"\nEntry (premium): Rs.{result['entry_price']:.2f}"
+                    f"\nStop-loss: Rs.{result['stop_loss']:.2f} (-30% of premium)"
+                )
             send_telegram_message(message)
             logging.info(f"Sent alert for {symbol}: {result['direction']} {result['strike']}")
         else:

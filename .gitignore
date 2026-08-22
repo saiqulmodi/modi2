@@ -1,5 +1,6 @@
 ﻿motilal_login.py
 angel_login.py
+send_telegram.py
 __pycache__/
 *.log
 watchlist.json
