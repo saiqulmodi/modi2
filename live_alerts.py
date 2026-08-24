@@ -5,7 +5,7 @@ import pytz
 
 from option_signal import get_directional_signal
 from send_telegram import send_telegram_message
-from intraday_confirm import get_intraday_confirmation
+from intraday_confirm import get_intraday_confirmation, get_option_volume_confirmation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,11 +49,21 @@ def check_and_alert():
                 logging.info(f"{symbol}: CE signal held back, intraday action doesn't confirm ({intraday})")
                 continue
 
+            option_volume = get_option_volume_confirmation(symbol, result["strike"], "CE")
+            if option_volume is None:
+                logging.info(f"{symbol}: CE signal held back, no option volume data available")
+                continue
+            if not option_volume["volume_confirms"]:
+                logging.info(f"{symbol}: CE signal held back, option volume doesn't confirm ({option_volume})")
+                continue
+
             message = (
                 f"<b>MODI2 Signal: {symbol}</b>\n"
                 f"Spot: {result['spot']}\n"
                 f"Trend: {result['note']}\n"
                 f"Intraday: VWAP {intraday['vwap']}, ORB breakout {intraday['orb_breakout']}\n"
+                f"Option volume: {option_volume['recent_pace']}/candle vs {option_volume['baseline_pace']}/candle opening "
+                f"({option_volume['volume_ratio']}x, needs {option_volume['volume_threshold']}x)\n"
                 f"Direction: {result['direction']} {result['strike']}"
             )
             if result["entry_price"] is not None:
