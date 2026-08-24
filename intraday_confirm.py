@@ -25,8 +25,13 @@ CANDLE_URL = "https://apiconnect.angelone.in/rest/secure/angelbroking/historical
 ORB_MINUTES = 15
 
 INDEX_TOKENS = {
-    "NIFTY": "26000",
-    "BANKNIFTY": "26009",
+    # NOTE: these are the AMXIDX-type tokens, NOT the same ones used for
+    # LTP fetches elsewhere (26000/26009). The historical candle endpoint
+    # silently returns an empty data array (no error) for the LTP tokens,
+    # which caused every single BANKNIFTY signal to get held back all day
+    # with "no intraday confirmation data available" despite a real trend.
+    "NIFTY": "99926000",
+    "BANKNIFTY": "99926009",
 }
 
 
