@@ -92,11 +92,12 @@ def get_directional_signal(symbol, strike_step=None):
 
     entry_price = None
     scripname = None
+    scripcode = None
     if direction in ("CE", "PE"):
         chain = get_option_chain(symbol, spot)
         match = chain[(chain["strikeprice"] == strike) & (chain["optiontype"] == direction)]
         if not match.empty:
-            scripcode = match.iloc[0]["scripcode"]
+            scripcode = int(match.iloc[0]["scripcode"])
             scripname = match.iloc[0]["scripname"]
             entry_price = get_ltp(scripcode, index_name=symbol, strike=strike, option_type=direction)
 
@@ -110,6 +111,7 @@ def get_directional_signal(symbol, strike_step=None):
         "direction": direction,
         "strike": strike,
         "scripname": scripname,
+        "scripcode": scripcode,
         "entry_price": entry_price,
         "stop_loss": stop_loss
     }

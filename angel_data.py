@@ -81,6 +81,41 @@ def find_angel_option_token(index_name, strike, option_type):
     return candidates[0][1]
 
 
+def find_angel_option_contract(index_name, strike, option_type):
+    """
+    Same matching as find_angel_option_token(), but also returns Angel's
+    exact tradingsymbol string (e.g. 'NIFTY25AUG2624500CE') and lot size --
+    needed for order placement, which requires symboltoken, tradingsymbol,
+    AND a quantity that's a multiple of the contract's lot size.
+    Returns (token, tradingsymbol, lot_size) or (None, None, None) if no match.
+    """
+    suffix = option_type.upper()
+    candidates = []
+    for entry in angel_scrips:
+        if (
+            entry.get("instrumenttype") == "OPTIDX"
+            and entry.get("name") == index_name
+            and entry.get("symbol", "").endswith(suffix)
+        ):
+            try:
+                entry_strike = float(entry["strike"]) / 100
+            except (ValueError, TypeError):
+                continue
+            if abs(entry_strike - strike) < 0.01:
+                try:
+                    expiry_date = datetime.strptime(entry["expiry"], "%d%b%Y")
+                except ValueError:
+                    continue
+                lot_size = int(entry.get("lotsize", 1))
+                candidates.append((expiry_date, entry["token"], entry["symbol"], lot_size))
+
+    if not candidates:
+        return None, None, None
+    candidates.sort(key=lambda c: c[0])
+    _, token, tradingsymbol, lot_size = candidates[0]
+    return token, tradingsymbol, lot_size
+
+
 def get_angel_option_ltp(index_name, strike, option_type):
     """Returns the raw Angel LTP response for the nearest-expiry matching option contract, or None."""
     token = find_angel_option_token(index_name, strike, option_type)

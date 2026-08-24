@@ -1,3 +1,4 @@
+import sys
 import time
 import logging
 from datetime import datetime
@@ -6,6 +7,13 @@ import pytz
 from option_signal import get_directional_signal
 from send_telegram import send_telegram_message
 from intraday_confirm import get_intraday_confirmation, get_option_volume_confirmation
+
+# MODI4: automated order placement (still DRY_RUN=True there -- no real
+# orders are possible until that's explicitly flipped off). Order execution
+# goes through Motilal (real trading account); Angel above is only used for
+# intraday candle/volume confirmation, unchanged.
+sys.path.insert(0, r"C:\Users\saiqu\Projects\MODI4")
+from place_order import place_order
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +81,22 @@ def check_and_alert():
                 )
             send_telegram_message(message)
             logging.info(f"Sent alert for {symbol}: {result['direction']} {result['strike']}")
+
+            # MODI4 auto-trading (still DRY_RUN there): always 1 lot for
+            # options -- rupee-based position sizing doesn't translate well
+            # here, since one full lot of an index option often costs more
+            # than the whole target position size (e.g. NIFTY premium x
+            # ~75-unit lot size). Motilal's API takes quantity directly in
+            # lots (quantityinlot), so no lot-size math needed here.
+            if result["entry_price"] is not None and result["scripcode"] is not None:
+                place_order(
+                    symbol=f"{symbol}_{result['strike']}CE", scripcode=result["scripcode"],
+                    exchange="NSEFO", transaction_type="BUY", quantity=1,
+                    entry_price=result["entry_price"], stop_loss=result["stop_loss"],
+                    product_type="NORMAL",
+                )
+            elif result["entry_price"] is not None:
+                logging.info(f"{symbol}: MODI4 order skipped, no Motilal scripcode found for strike {result['strike']}")
         else:
             logging.info(f"{symbol}: NEUTRAL, no alert sent")
 
