@@ -1,3 +1,5 @@
+import re
+from datetime import date, datetime
 import yfinance as yf
 import pandas as pd
 from option_chain import get_spot_price, get_option_chain, get_ltp
@@ -6,6 +8,46 @@ YF_TICKERS = {
     "NIFTY": "^NSEI",
     "BANKNIFTY": "^NSEBANK"
 }
+
+# A same-direction gap this big (in %) has already used up much of a move
+# before the alert even fires, and unfilled index gaps this size carry a
+# real intraday reversal risk that a pure trend/RSI signal can't see.
+# Informational/caution threshold, not backtested like the core CE signal.
+GAP_CAUTION_PCT = 1.0
+
+
+def parse_expiry_from_scripname(scripname):
+    """
+    scripname looks like 'NIFTY 25-Aug-2026 CE 23750'. Motilal's expirydate
+    column in nsefo_scrips.csv turned out to be unreliable (found off by
+    exactly 10 years during testing), so the real expiry is parsed straight
+    out of the human-readable scripname instead.
+    """
+    if not scripname:
+        return None
+    match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4})", scripname)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%d-%b-%Y").date()
+    except ValueError:
+        return None
+
+
+def get_gap_pct(symbol):
+    """
+    Overnight gap: (today's open - yesterday's close) / yesterday's close,
+    as a percentage. Returns None if there isn't enough recent history.
+    """
+    yf_symbol = YF_TICKERS[symbol]
+    hist = yf.Ticker(yf_symbol).history(period="5d")
+    if len(hist) < 2:
+        return None
+    prev_close = hist["Close"].iloc[-2]
+    today_open = hist["Open"].iloc[-1]
+    if not prev_close:
+        return None
+    return round((today_open - prev_close) / prev_close * 100, 2)
 
 def calculate_rsi(prices, period=14):
     delta = prices.diff()
@@ -93,6 +135,8 @@ def get_directional_signal(symbol, strike_step=None):
     entry_price = None
     scripname = None
     scripcode = None
+    expiry_date = None
+    days_to_expiry = None
     if direction in ("CE", "PE"):
         chain = get_option_chain(symbol, spot)
         match = chain[(chain["strikeprice"] == strike) & (chain["optiontype"] == direction)]
@@ -100,8 +144,12 @@ def get_directional_signal(symbol, strike_step=None):
             scripcode = int(match.iloc[0]["scripcode"])
             scripname = match.iloc[0]["scripname"]
             entry_price = get_ltp(scripcode, index_name=symbol, strike=strike, option_type=direction)
+            expiry_date = parse_expiry_from_scripname(scripname)
+            if expiry_date:
+                days_to_expiry = (expiry_date - date.today()).days
 
     stop_loss = round(entry_price * (1 - STOPLOSS_PCT), 2) if entry_price else None
+    gap_pct = get_gap_pct(symbol)
 
     return {
         "symbol": symbol,
@@ -113,7 +161,10 @@ def get_directional_signal(symbol, strike_step=None):
         "scripname": scripname,
         "scripcode": scripcode,
         "entry_price": entry_price,
-        "stop_loss": stop_loss
+        "stop_loss": stop_loss,
+        "expiry_date": expiry_date.isoformat() if expiry_date else None,
+        "days_to_expiry": days_to_expiry,
+        "gap_pct": gap_pct,
     }
 
 if __name__ == "__main__":
