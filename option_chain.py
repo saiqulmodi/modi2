@@ -1,6 +1,13 @@
+import time
+import hashlib
+import pyotp
 import pandas as pd
 import requests
-from motilal_login import auth_token, headers
+from motilal_login import (
+    auth_token, headers, USER_ID, PASSWORD as MOTILAL_PASSWORD, DOB,
+    API_KEY as MOTILAL_API_KEY, TOTP_SECRET as MOTILAL_TOTP_SECRET,
+    login_url as MOTILAL_LOGIN_URL,
+)
 from angel_data import get_angel_index_ltp, get_angel_option_ltp
 
 df = pd.read_csv("nsefo_scrips.csv")
@@ -10,11 +17,44 @@ INDEX_SCRIPCODES = {
     "BANKNIFTY": 26009
 }
 
+# motilal_login.py fetches its auth_token once at import time -- fine for
+# short-lived scripts (a fresh process each run), but this module has two
+# long-running callers (the Streamlit dashboard and live_alerts.py's
+# perpetual loop) that only ever import it once and can run for many
+# hours/days, by which point that token is dead. Re-logs in fresh, cached
+# for 1 hour, instead of running on an increasingly stale token.
+_TOKEN_TTL_SECONDS = 3600
+_cached_token = None
+_cached_token_at = 0
+
+
+def _get_fresh_motilal_token():
+    global _cached_token, _cached_token_at
+    now = time.time()
+    if _cached_token is not None and (now - _cached_token_at) < _TOKEN_TTL_SECONDS:
+        return _cached_token
+
+    hashed_password = hashlib.sha256((MOTILAL_PASSWORD + MOTILAL_API_KEY).encode()).hexdigest()
+    totp_code = pyotp.TOTP(MOTILAL_TOTP_SECRET).now()
+    body = {"userid": USER_ID, "password": hashed_password, "2FA": DOB, "totp": totp_code}
+    try:
+        response = requests.post(MOTILAL_LOGIN_URL, json=body, headers=headers, timeout=10)
+        data = response.json()
+    except Exception:
+        return _cached_token or auth_token
+
+    if data.get("status") == "SUCCESS":
+        _cached_token = data.get("AuthToken")
+        _cached_token_at = now
+        return _cached_token
+    return _cached_token or auth_token
+
+
 def get_spot_price(symbol):
     """Fetch live index spot price (NIFTY or BANKNIFTY) via Motilal's LTP endpoint, falling back to Angel One on failure."""
     url = "https://openapi.motilaloswal.com/rest/report/v3/getltpdata"
     ltp_headers = headers.copy()
-    ltp_headers["Authorization"] = auth_token
+    ltp_headers["Authorization"] = _get_fresh_motilal_token()
     body = {
         "clientcode": "",
         "exchange": "NSE",
@@ -65,7 +105,7 @@ def get_ltp(scripcode, index_name=None, strike=None, option_type=None):
     """
     url = "https://openapi.motilaloswal.com/rest/report/v3/getltpdata"
     ltp_headers = headers.copy()
-    ltp_headers["Authorization"] = auth_token
+    ltp_headers["Authorization"] = _get_fresh_motilal_token()
     body = {
         "clientcode": "",
         "exchange": "NSEFO",

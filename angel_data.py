@@ -5,9 +5,15 @@ MODI1's angel_data.py.
 """
 
 import json
+import time
+import pyotp
 import requests
 from datetime import datetime
-from angel_login import auth_token, API_KEY
+from angel_login import (
+    auth_token, API_KEY, CLIENT_ID, PASSWORD as ANGEL_PASSWORD,
+    TOTP_SECRET as ANGEL_TOTP_SECRET, login_url as ANGEL_LOGIN_URL,
+    headers as ANGEL_LOGIN_HEADERS,
+)
 
 with open("angel_scrips.json", "r") as f:
     angel_scrips = json.load(f)
@@ -17,10 +23,39 @@ INDEX_TOKENS = {
     "BANKNIFTY": "26009",
 }
 
+# angel_login.py fetches its auth_token once at import time -- same
+# staleness problem as motilal_login.py, and this module has the same two
+# long-running callers (dashboard + live_alerts.py's perpetual loop) via
+# option_chain.py's Angel fallback. Re-logs in fresh, cached for 1 hour.
+_TOKEN_TTL_SECONDS = 3600
+_cached_token = None
+_cached_token_at = 0
+
+
+def _get_fresh_angel_token():
+    global _cached_token, _cached_token_at
+    now = time.time()
+    if _cached_token is not None and (now - _cached_token_at) < _TOKEN_TTL_SECONDS:
+        return _cached_token
+
+    totp_code = pyotp.TOTP(ANGEL_TOTP_SECRET).now()
+    body = {"clientcode": CLIENT_ID, "password": ANGEL_PASSWORD, "totp": totp_code}
+    try:
+        response = requests.post(ANGEL_LOGIN_URL, json=body, headers=ANGEL_LOGIN_HEADERS, timeout=10)
+        data = response.json()
+    except Exception:
+        return _cached_token or auth_token
+
+    if data.get("status"):
+        _cached_token = data["data"]["jwtToken"]
+        _cached_token_at = now
+        return _cached_token
+    return _cached_token or auth_token
+
 
 def _headers():
     return {
-        "Authorization": f"Bearer {auth_token}",
+        "Authorization": f"Bearer {_get_fresh_angel_token()}",
         "Content-Type": "application/json",
         "Accept": "application/json",
         "X-UserType": "USER",
