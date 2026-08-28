@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 from option_chain import get_option_chain, get_spot_price, get_ltp, parse_expiry_from_scripname
 
-# Set the page to be wide so the tables fit nicely on mobile
-st.set_page_config(page_title="MODI2 Option Chain", layout="wide")
+# "centered" (Streamlit's default) instead of "wide" -- wide mode was for
+# the old full-width raw-column table; this compact 4-column view looks
+# better centered and narrow, especially on a phone screen.
+st.set_page_config(page_title="MODI2 Option Chain", layout="centered")
 
 st.title("📈 MODI2 Live Option Chain")
 
@@ -41,7 +43,14 @@ if st.button("Load Option Chain"):
 
                 st.dataframe(
                     simple_df.style.format({"Value": lambda v: f"Rs.{v:.2f}" if v is not None else "N/A"}),
-                    use_container_width=True, hide_index=True,
+                    hide_index=True,
+                    use_container_width=False,
+                    column_config={
+                        "Strike": st.column_config.NumberColumn(width="small"),
+                        "Type": st.column_config.TextColumn(width="small"),
+                        "Expiry": st.column_config.TextColumn(width="small"),
+                        "Value": st.column_config.TextColumn(width="small"),
+                    },
                 )
             else:
                 st.warning(f"No option contracts found for {symbol}.")
