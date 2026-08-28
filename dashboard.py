@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from option_chain import get_option_chain, get_spot_price
+from option_chain import get_option_chain, get_spot_price, get_ltp, parse_expiry_from_scripname
 
 # Set the page to be wide so the tables fit nicely on mobile
 st.set_page_config(page_title="MODI2 Option Chain", layout="wide")
@@ -27,9 +27,22 @@ if st.button("Load Option Chain"):
 
             if chain_df is not None and not chain_df.empty:
                 st.success(f"Successfully loaded {len(chain_df)} contracts.")
-                
-                # Streamlit's built-in dataframe display supports sorting and scrolling!
-                st.dataframe(chain_df, use_container_width=True, hide_index=True)
+
+                rows = []
+                for _, row in chain_df.iterrows():
+                    expiry = parse_expiry_from_scripname(row.get("scripname"))
+                    rows.append({
+                        "Strike": row["strikeprice"],
+                        "Type": "Call" if row["optiontype"] == "CE" else "Put",
+                        "Expiry": expiry.strftime("%d-%b-%Y") if expiry else "Unknown",
+                        "Value": get_ltp(row["scripcode"]),
+                    })
+                simple_df = pd.DataFrame(rows)
+
+                st.dataframe(
+                    simple_df.style.format({"Value": lambda v: f"Rs.{v:.2f}" if v is not None else "N/A"}),
+                    use_container_width=True, hide_index=True,
+                )
             else:
                 st.warning(f"No option contracts found for {symbol}.")
                 

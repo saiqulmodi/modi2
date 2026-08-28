@@ -1,8 +1,7 @@
-import re
-from datetime import date, datetime
+from datetime import date
 import yfinance as yf
 import pandas as pd
-from option_chain import get_spot_price, get_option_chain, get_ltp
+from option_chain import get_spot_price, get_option_chain, get_ltp, parse_expiry_from_scripname
 
 YF_TICKERS = {
     "NIFTY": "^NSEI",
@@ -14,24 +13,6 @@ YF_TICKERS = {
 # real intraday reversal risk that a pure trend/RSI signal can't see.
 # Informational/caution threshold, not backtested like the core CE signal.
 GAP_CAUTION_PCT = 1.0
-
-
-def parse_expiry_from_scripname(scripname):
-    """
-    scripname looks like 'NIFTY 25-Aug-2026 CE 23750'. Motilal's expirydate
-    column in nsefo_scrips.csv turned out to be unreliable (found off by
-    exactly 10 years during testing), so the real expiry is parsed straight
-    out of the human-readable scripname instead.
-    """
-    if not scripname:
-        return None
-    match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4})", scripname)
-    if not match:
-        return None
-    try:
-        return datetime.strptime(match.group(1), "%d-%b-%Y").date()
-    except ValueError:
-        return None
 
 
 def get_gap_pct(symbol):

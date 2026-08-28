@@ -1,8 +1,10 @@
 import time
+import re
 import hashlib
 import pyotp
 import pandas as pd
 import requests
+from datetime import date, datetime
 from motilal_login import (
     auth_token, headers, USER_ID, PASSWORD as MOTILAL_PASSWORD, DOB,
     API_KEY as MOTILAL_API_KEY, TOTP_SECRET as MOTILAL_TOTP_SECRET,
@@ -81,6 +83,24 @@ def get_spot_price(symbol):
         return ltp if ltp > 0 else close
     return None
 
+def parse_expiry_from_scripname(scripname):
+    """
+    scripname looks like 'NIFTY 25-Aug-2026 CE 23750'. Motilal's expirydate
+    column in nsefo_scrips.csv turned out to be unreliable (found off by
+    exactly 10 years during testing), so the real expiry is parsed straight
+    out of the human-readable scripname instead.
+    """
+    if not scripname:
+        return None
+    match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4})", scripname)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%d-%b-%Y").date()
+    except ValueError:
+        return None
+
+
 def get_option_chain(symbol, spot_price, strike_range=500, nearest_expiry_only=True):
     options = df[
         (df["scripshortname"] == symbol) &
@@ -91,8 +111,17 @@ def get_option_chain(symbol, spot_price, strike_range=500, nearest_expiry_only=T
     ].copy()
 
     if nearest_expiry_only and not options.empty:
-        nearest = options["expirydate"].min()
-        options = options[options["expirydate"] == nearest]
+        # options["expirydate"] is the same unreliable column (off by 10
+        # years) -- picking its min() was actually selecting an ALREADY
+        # EXPIRED contract instead of the true nearest future one. Parse
+        # the real date from scripname and filter to future expiries only.
+        options["_real_expiry"] = options["scripname"].apply(parse_expiry_from_scripname)
+        today = date.today()
+        future_options = options[options["_real_expiry"] >= today]
+        if not future_options.empty:
+            nearest = future_options["_real_expiry"].min()
+            options = future_options[future_options["_real_expiry"] == nearest]
+        options = options.drop(columns=["_real_expiry"])
 
     return options.sort_values(["strikeprice", "optiontype"])
 
