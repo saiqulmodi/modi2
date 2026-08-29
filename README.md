@@ -50,6 +50,12 @@ credentials from the [Twilio Console](https://console.twilio.com/); Angel
 One / Motilal API keys from their respective developer portals (see
 MODI1's README for the links).
 
+**Status: WhatsApp alerting is currently not active** — Twilio requires a
+paid subscription/sender approval to send outside the sandbox's limited
+window, which isn't set up right now. `send_alert.py` calls will fail
+silently in that path until a paid Twilio plan is in place; Telegram
+alerting (`send_telegram.py`) is unaffected and is the working channel.
+
 ## Running
 
 - `run_live_alerts.bat` — runs `live_alerts.py` (the alerting loop)
