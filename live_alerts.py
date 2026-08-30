@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sys
@@ -11,6 +12,35 @@ from option_chain import get_ltp
 from send_telegram import send_telegram_message
 from intraday_confirm import get_intraday_confirmation, get_option_volume_confirmation
 from geopolitical_check import has_breaking_geopolitical_event
+
+# Caps Telegram notifications for a single geopolitical hold-back event at
+# 2 sends -- without this, the same escalation would re-notify on every
+# 5-min check for as long as it stays flagged (up to the 30-min LLM verdict
+# cache, then potentially again after re-classification). Keyed by a hash
+# of the LLM's reasoning text, so a genuinely NEW event (different
+# reasoning) still gets its own fresh 2 notifications. Resets on process
+# restart -- acceptable since the LLM verdict cache resets then too.
+_MAX_GEOPOLITICAL_NOTIFICATIONS = 2
+_geopolitical_notify_counts = {}
+
+
+def _notify_geopolitical_holdback(symbol, direction, detail):
+    """Sends a Telegram alert for a geopolitical hold-back, capped at
+    _MAX_GEOPOLITICAL_NOTIFICATIONS per distinct event. Always returns
+    after logging regardless of whether it actually sent, since the entry
+    is held back either way -- this only controls Telegram noise."""
+    event_key = hashlib.sha256(detail.encode()).hexdigest()
+    count = _geopolitical_notify_counts.get(event_key, 0)
+    logging.info(f"{symbol}: {direction} signal held back, breaking geopolitical escalation -- {detail}")
+    if count >= _MAX_GEOPOLITICAL_NOTIFICATIONS:
+        return
+    send_telegram_message(
+        f"\U0001F6A8 <b>MODI2: Entries held back ({symbol})</b>\n"
+        f"Geopolitical escalation detected: {detail}\n"
+        f"(Notification {count + 1}/{_MAX_GEOPOLITICAL_NOTIFICATIONS} for this event -- "
+        f"won't repeat further while it stays active.)"
+    )
+    _geopolitical_notify_counts[event_key] = count + 1
 
 
 def _both_index_trend_line():
@@ -150,7 +180,7 @@ def check_and_alert():
         # regardless, since exiting during a crisis shouldn't be suppressed.
         is_escalation, geo_detail = has_breaking_geopolitical_event()
         if is_escalation:
-            logging.info(f"{symbol}: {direction} signal held back, breaking geopolitical escalation -- {geo_detail}")
+            _notify_geopolitical_holdback(symbol, direction, geo_detail)
             continue
 
         # Gap-move caution: a same-direction gap this big already used up
