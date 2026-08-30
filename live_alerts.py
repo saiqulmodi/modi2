@@ -10,6 +10,7 @@ from option_signal import get_directional_signal, get_trend_signal, GAP_CAUTION_
 from option_chain import get_ltp
 from send_telegram import send_telegram_message
 from intraday_confirm import get_intraday_confirmation, get_option_volume_confirmation
+from geopolitical_check import has_breaking_geopolitical_event
 
 
 def _both_index_trend_line():
@@ -139,6 +140,17 @@ def check_and_alert():
 
         if direction not in ("CE", "PE"):
             logging.info(f"{symbol}: NEUTRAL, no alert sent")
+            continue
+
+        # Geopolitical shock guard: an LLM-classified check (not just
+        # keyword matching -- see geopolitical_check.py for why) for a
+        # genuinely NEW escalation, not routine ongoing-conflict coverage.
+        # Entry-side only, same as the gap/expiry guards below -- a
+        # protective SELL on an existing position (above) still fires
+        # regardless, since exiting during a crisis shouldn't be suppressed.
+        is_escalation, geo_detail = has_breaking_geopolitical_event()
+        if is_escalation:
+            logging.info(f"{symbol}: {direction} signal held back, breaking geopolitical escalation -- {geo_detail}")
             continue
 
         # Gap-move caution: a same-direction gap this big already used up
