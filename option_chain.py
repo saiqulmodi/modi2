@@ -155,6 +155,34 @@ def get_ltp(scripcode, index_name=None, strike=None, option_type=None):
             return angel_result["data"]["ltp"]
     return None
 
+
+def get_ltp_and_volume(scripcode):
+    """
+    Same Motilal endpoint as get_ltp(), but also returns the contract's
+    traded volume -- used for the dashboard's per-strike volume view
+    (highest-volume CALL/PUT strikes as informal resistance/support).
+    Angel's LTP fallback doesn't expose volume, so this is Motilal-only:
+    returns (None, None) if that request fails, with no fallback attempt.
+    """
+    url = "https://openapi.motilaloswal.com/rest/report/v3/getltpdata"
+    ltp_headers = headers.copy()
+    ltp_headers["Authorization"] = _get_fresh_motilal_token()
+    body = {
+        "clientcode": "",
+        "exchange": "NSEFO",
+        "scripcode": int(scripcode)
+    }
+    try:
+        response = requests.post(url, json=body, headers=ltp_headers, timeout=10)
+        result = response.json()
+    except Exception:
+        return None, None
+
+    if result.get("status") == "SUCCESS":
+        data = result["data"]
+        return data["ltp"] / 100, data.get("volume")
+    return None, None
+
 if __name__ == "__main__":
     symbol = "NIFTY"
     spot = get_spot_price(symbol)

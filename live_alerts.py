@@ -6,10 +6,21 @@ import logging
 from datetime import datetime, date, time as dtime
 import pytz
 
-from option_signal import get_directional_signal, GAP_CAUTION_PCT
+from option_signal import get_directional_signal, get_trend_signal, GAP_CAUTION_PCT
 from option_chain import get_ltp
 from send_telegram import send_telegram_message
 from intraday_confirm import get_intraday_confirmation, get_option_volume_confirmation
+
+
+def _both_index_trend_line():
+    """Both NIFTY and BANKNIFTY trend, appended to every alert regardless of
+    which index the alert is actually about -- so a NIFTY alert still shows
+    you BANKNIFTY's current trend for context, and vice versa."""
+    lines = []
+    for sym in ["NIFTY", "BANKNIFTY"]:
+        _, note = get_trend_signal(sym)
+        lines.append(f"{sym}: {note}")
+    return "\n".join(lines)
 
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -112,7 +123,8 @@ def check_and_alert():
                     f"Reason: {exit_reason}\n"
                     f"Entry premium: Rs.{open_pos['entry_price']:.2f}"
                     + (f" -> Now: Rs.{current_ltp:.2f} ({pnl_pct:+.1f}%)" if current_ltp is not None else " -> Now: unavailable")
-                    + "\nConsider selling manually."
+                    + "\nConsider selling manually (closing this existing position -- not a fresh short)."
+                    + f"\n\n{_both_index_trend_line()}"
                 )
                 send_telegram_message(message)
                 logging.info(f"Sent SELL alert for {symbol} {open_pos['strike']}{open_pos['option_type']}: {exit_reason}")
@@ -197,6 +209,7 @@ def check_and_alert():
                 f"\nEntry (premium): Rs.{result['entry_price']:.2f}"
                 f"\nStop-loss: Rs.{result['stop_loss']:.2f} (-30% of premium)"
             )
+        message += f"\n\n{_both_index_trend_line()}"
         send_telegram_message(message)
         logging.info(f"Sent BUY alert for {symbol}: {direction} {result['strike']}")
 
