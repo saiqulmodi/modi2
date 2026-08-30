@@ -101,7 +101,18 @@ def parse_expiry_from_scripname(scripname):
         return None
 
 
-def get_option_chain(symbol, spot_price, strike_range=500, nearest_expiry_only=True):
+def get_option_chain(symbol, spot_price, strike_range=500, nearest_expiry_only=True, current_month_only=False):
+    """
+    current_month_only=True overrides nearest_expiry_only -- instead of just
+    the single nearest contract, keeps every weekly AND the monthly expiry
+    that falls in the same calendar month as the NEAREST upcoming expiry
+    (not necessarily today's month -- near month-end, every expiry left in
+    today's month has already lapsed, e.g. today Aug 30 but the nearest
+    tradeable NIFTY expiry is already Sep 1; anchoring to today's month
+    would then return nothing). Used by the dashboard's chain view;
+    option_signal.py's entry logic keeps using the single-nearest-expiry
+    default.
+    """
     options = df[
         (df["scripshortname"] == symbol) &
         (df["instrumentname"] == "OPTIDX") &
@@ -110,7 +121,7 @@ def get_option_chain(symbol, spot_price, strike_range=500, nearest_expiry_only=T
         (df["strikeprice"] <= spot_price + strike_range)
     ].copy()
 
-    if nearest_expiry_only and not options.empty:
+    if not options.empty and (nearest_expiry_only or current_month_only):
         # options["expirydate"] is the same unreliable column (off by 10
         # years) -- picking its min() was actually selecting an ALREADY
         # EXPIRED contract instead of the true nearest future one. Parse
@@ -118,7 +129,17 @@ def get_option_chain(symbol, spot_price, strike_range=500, nearest_expiry_only=T
         options["_real_expiry"] = options["scripname"].apply(parse_expiry_from_scripname)
         today = date.today()
         future_options = options[options["_real_expiry"] >= today]
-        if not future_options.empty:
+
+        if current_month_only:
+            if not future_options.empty:
+                nearest = future_options["_real_expiry"].min()
+                options = future_options[
+                    (future_options["_real_expiry"].apply(lambda d: d.year) == nearest.year)
+                    & (future_options["_real_expiry"].apply(lambda d: d.month) == nearest.month)
+                ]
+            else:
+                options = future_options
+        elif not future_options.empty:
             nearest = future_options["_real_expiry"].min()
             options = future_options[future_options["_real_expiry"] == nearest]
         options = options.drop(columns=["_real_expiry"])
