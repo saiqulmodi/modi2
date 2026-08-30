@@ -30,8 +30,11 @@ st.set_page_config(page_title="MODI2 Option Chain", layout="centered")
 
 st.title("📈 MODI2 Live Option Chain")
 
-# Create a text box for you to easily change the symbol from your phone
-symbol = st.text_input("Enter Symbol:", "NIFTY").upper()
+# Create a text box for you to easily change the symbol from your phone.
+# Strip spaces too -- "BANK NIFTY" / "Bank Nifty" typed naturally would
+# otherwise fail the exact-match check below and show an error instead of
+# the chain, since BANKNIFTY has no space in its actual symbol.
+symbol = st.text_input("Enter Symbol:", "NIFTY").upper().replace(" ", "").strip()
 
 if st.button("Load Option Chain"):
     try:
