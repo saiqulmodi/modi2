@@ -146,6 +146,7 @@ def get_intraday_confirmation(symbol):
         "orb_low": round(orb_low, 2),
         "orb_breakout": orb_breakout,
         "confirms_bullish": above_vwap and orb_breakout == "UP",
+        "confirms_bearish": (not above_vwap) and orb_breakout == "DOWN",
     }
 
 

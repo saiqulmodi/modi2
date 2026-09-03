@@ -141,8 +141,17 @@ def check_and_alert():
                     )
             if exit_reason is None:
                 intraday = get_intraday_confirmation(symbol)
-                if intraday is not None and not intraday["confirms_bullish"]:
-                    exit_reason = "intraday trend no longer confirms bullish"
+                if intraday is not None:
+                    position_direction = open_pos["option_type"]
+                    confirms = (
+                        intraday["confirms_bullish"] if position_direction == "CE"
+                        else intraday["confirms_bearish"]
+                    )
+                    if not confirms:
+                        exit_reason = (
+                            f"intraday trend no longer confirms "
+                            f"{'bullish' if position_direction == 'CE' else 'bearish'}"
+                        )
 
             if exit_reason:
                 pnl_pct = (
